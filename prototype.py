@@ -1,8 +1,18 @@
+import sys
 import sqlite3
+import logging
 from typing import Self
 from enum import Enum
 from pydantic import BaseModel  # This works for Pydantic v2 as well
 
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 # ------------------------------
 # Define Pydantic Models
 # ------------------------------
@@ -57,6 +67,8 @@ def create_tables(conn: sqlite3.Connection):
         conn.execute("""
             CREATE TABLE IF NOT EXISTS recipes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER,   -- identifier to group different iterations of the same recipe
+                version INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 description TEXT,
                 comments TEXT,
@@ -116,24 +128,47 @@ def get_or_create_ingredient(conn: sqlite3.Connection, name: str) -> int:
     cur = conn.execute("SELECT id FROM ingredients WHERE name = ?", (name,))
     row = cur.fetchone()
     if row:
+        logger.info(f"Ingredient {name} already exists")
         return row[0]
     cur = conn.execute("INSERT INTO ingredients (name) VALUES (?)", (name,))
+    logger.info(f"Inserted ingredient {name} with ID {cur.lastrowid}")
     return cur.lastrowid
 
 def get_or_create_tag(conn: sqlite3.Connection, name: str) -> int:
     cur = conn.execute("SELECT id FROM tags WHERE name = ?", (name,))
     row = cur.fetchone()
     if row:
+        logger.info(f"Tag {name} already exists")
         return row[0]
     cur = conn.execute("INSERT INTO tags (name) VALUES (?)", (name,))
+    logger.info(f"Inserted Tag {name} with ID {cur.lastrowid}")
     return cur.lastrowid
 
-def insert_recipe(conn: sqlite3.Connection, recipe: Recipe) -> int:
-    cur = conn.execute(
-        "INSERT INTO recipes (title, description, prep_time, cook_time, servings) VALUES (?, ?, ?, ?, ?)",
-        (recipe.title, recipe.description, recipe.prep_time, recipe.cook_time, recipe.servings)
-    )
-    recipe_id = cur.lastrowid
+def insert_recipe(conn: sqlite3.Connection, recipe: Recipe, group_id: int | None = None) -> int:
+
+    if group_id is None:
+        # New recipe, version 1
+        cur = conn.execute(
+            "INSERT INTO recipes (group_id, version, title, description, comments, prep_time, cook_time, servings) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (None, 1, recipe.title, recipe.description, recipe.comments, recipe.prep_time, recipe.cook_time, recipe.servings)
+        )
+        recipe_id = cur.lastrowid
+        # Use the inserted id as the group_id for subsequent versions.
+        conn.execute("UPDATE recipes SET group_id = ? WHERE id = ?", (recipe_id, recipe_id))
+        group_id = recipe_id
+        version = 1
+    else:
+        # Insert a new version for an existing recipe group.
+        cur = conn.execute("SELECT MAX(version) FROM recipes WHERE group_id = ?", (group_id,))
+        max_version = cur.fetchone()[0] or 0
+        version = max_version + 1
+        cur = conn.execute(
+            "INSERT INTO recipes (group_id, version, title, description, comments, prep_time, cook_time, servings) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (group_id, version, recipe.title, recipe.description, recipe.comments, recipe.prep_time, recipe.cook_time, recipe.servings)
+        )
+        recipe_id = cur.lastrowid
+
+    logger.info(f"Inserting recipe {recipe_id}, version {version}\n{recipe.model_dump()}")
 
     # Insert instructions
     if recipe.instructions:
@@ -169,8 +204,8 @@ def insert_recipe(conn: sqlite3.Connection, recipe: Recipe) -> int:
 # ------------------------------
 
 def create_mock_recipes():
-    # Recipe 1: Pancakes
-    pancakes = Recipe(
+    # Original version of Pancakes
+    pancakes_v1 = Recipe(
         title="Pancakes",
         description="Fluffy breakfast pancakes.",
         prep_time=10,
@@ -179,7 +214,7 @@ def create_mock_recipes():
         ingredients=[
             RecipeIngredient(ingredient=Ingredient(name="Flour"), quantity=200, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Milk"), quantity=300, unit=Unit.MILLILITER),
-            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.PCS),
+            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.GRAM),  # Adjust unit if needed
             RecipeIngredient(ingredient=Ingredient(name="Butter"), quantity=50, unit=Unit.GRAM)
         ],
         instructions=[
@@ -191,8 +226,32 @@ def create_mock_recipes():
         tags=[Tag(name="Breakfast"), Tag(name="Easy")]
     )
 
-    # Recipe 2: Spaghetti Bolognese
-    spaghetti = Recipe(
+    # A new version of Pancakes with a slight variation.
+    pancakes_v2 = Recipe(
+        title="Pancakes",
+        description="Fluffy breakfast pancakes with a hint of vanilla.",
+        comments="this is much better",
+        prep_time=12,
+        cook_time=15,
+        servings=4,
+        ingredients=[
+            RecipeIngredient(ingredient=Ingredient(name="Flour"), quantity=200, unit=Unit.GRAM),
+            RecipeIngredient(ingredient=Ingredient(name="Milk"), quantity=300, unit=Unit.MILLILITER),
+            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.GRAM),
+            RecipeIngredient(ingredient=Ingredient(name="Butter"), quantity=50, unit=Unit.GRAM),
+            RecipeIngredient(ingredient=Ingredient(name="Vanilla Extract"), quantity=5, unit=Unit.MILLILITER)
+        ],
+        instructions=[
+            Instruction(step_number=1, description="Mix all dry ingredients."),
+            Instruction(step_number=2, description="Add milk, eggs, and vanilla extract, then whisk until smooth."),
+            Instruction(step_number=3, description="Heat a frying pan and melt butter."),
+            Instruction(step_number=4, description="Pour batter into the pan and cook until golden on both sides.")
+        ],
+        tags=[Tag(name="Breakfast"), Tag(name="Easy"), Tag(name="Sweet")]
+    )
+
+    # Original version of Spaghetti Bolognese
+    spaghetti_v1 = Recipe(
         title="Spaghetti Bolognese",
         description="Classic Italian pasta with meat sauce.",
         prep_time=15,
@@ -201,9 +260,9 @@ def create_mock_recipes():
         ingredients=[
             RecipeIngredient(ingredient=Ingredient(name="Spaghetti"), quantity=400, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Ground Beef"), quantity=500, unit=Unit.GRAM),
-            RecipeIngredient(ingredient=Ingredient(name="Tomato Sauce"), quantity=800, unit=Unit.GRAM),
-            RecipeIngredient(ingredient=Ingredient(name="Onion"), quantity=1, unit=Unit.PCS),
-            RecipeIngredient(ingredient=Ingredient(name="Garlic"), quantity=2, unit=Unit.PCS)
+            RecipeIngredient(ingredient=Ingredient(name="Tomato Sauce"), quantity=800, unit=Unit.MILLILITER),
+            RecipeIngredient(ingredient=Ingredient(name="Onion"), quantity=1, unit=Unit.GRAM),  # Adjust unit for countable items if needed
+            RecipeIngredient(ingredient=Ingredient(name="Garlic"), quantity=2, unit=Unit.GRAM)
         ],
         instructions=[
             Instruction(step_number=1, description="Boil spaghetti until al dente."),
@@ -214,24 +273,18 @@ def create_mock_recipes():
         ],
         tags=[Tag(name="Dinner"), Tag(name="Italian")]
     )
-    return [pancakes, spaghetti]
+    return pancakes_v1, pancakes_v2, spaghetti_v1
 
 
-# ------------------------------
-# Main Program Execution
-# ------------------------------
-
-def main():
+if __name__ == "__main__":
     # Connect to an in-memory SQLite database
     conn = sqlite3.connect("oppskrifter.db")
     create_tables(conn)
 
-    recipes = create_mock_recipes()
-    for recipe in recipes:
-        insert_recipe(conn, recipe)
+    pancakes_v1,  pancakes_v2, spaghetti_v1 = create_mock_recipes()
+    pancake_id = insert_recipe(conn=conn, recipe=pancakes_v1, group_id=None)
+    pancake_id = insert_recipe(conn=conn, recipe=pancakes_v2, group_id=pancake_id)
+    spaghetti_id = insert_recipe(conn=conn, recipe=spaghetti_v1, group_id=None)
     conn.close()
 
-
-if __name__ == "__main__":
-    main()
 
