@@ -214,7 +214,7 @@ def create_mock_recipes():
         ingredients=[
             RecipeIngredient(ingredient=Ingredient(name="Flour"), quantity=200, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Milk"), quantity=300, unit=Unit.MILLILITER),
-            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.GRAM),  # Adjust unit if needed
+            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.PCS),  # Adjust unit if needed
             RecipeIngredient(ingredient=Ingredient(name="Butter"), quantity=50, unit=Unit.GRAM)
         ],
         instructions=[
@@ -237,7 +237,7 @@ def create_mock_recipes():
         ingredients=[
             RecipeIngredient(ingredient=Ingredient(name="Flour"), quantity=200, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Milk"), quantity=300, unit=Unit.MILLILITER),
-            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.GRAM),
+            RecipeIngredient(ingredient=Ingredient(name="Egg"), quantity=2, unit=Unit.PCS),
             RecipeIngredient(ingredient=Ingredient(name="Butter"), quantity=50, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Vanilla Extract"), quantity=5, unit=Unit.MILLILITER)
         ],
@@ -261,8 +261,8 @@ def create_mock_recipes():
             RecipeIngredient(ingredient=Ingredient(name="Spaghetti"), quantity=400, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Ground Beef"), quantity=500, unit=Unit.GRAM),
             RecipeIngredient(ingredient=Ingredient(name="Tomato Sauce"), quantity=800, unit=Unit.MILLILITER),
-            RecipeIngredient(ingredient=Ingredient(name="Onion"), quantity=1, unit=Unit.GRAM),  # Adjust unit for countable items if needed
-            RecipeIngredient(ingredient=Ingredient(name="Garlic"), quantity=2, unit=Unit.GRAM)
+            RecipeIngredient(ingredient=Ingredient(name="Onion"), quantity=1, unit=Unit.PCS),  # Adjust unit for countable items if needed
+            RecipeIngredient(ingredient=Ingredient(name="Garlic"), quantity=2, unit=Unit.PCS)
         ],
         instructions=[
             Instruction(step_number=1, description="Boil spaghetti until al dente."),
