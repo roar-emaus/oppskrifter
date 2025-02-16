@@ -17,6 +17,7 @@ logger.addHandler(handler)
 # Define Pydantic Models
 # ------------------------------
 
+
 class Unit(str, Enum):
     GRAM = "g"
     KILOGRAM = "kg"
@@ -25,8 +26,18 @@ class Unit(str, Enum):
     DECILITER = "dl"
     PCS = "pcs"
 
+
+class IngredientCategory(str, Enum):
+    VEGETABLE = "vegetable"
+    MEAT = "meat"
+    FISH = "fish"
+    FRUIT = "fruit"
+    SPICE = "spice"
+
+
 class Ingredient(BaseModel):
     name: str
+    category: IngredientCategory | None = None
 
 
 class RecipeIngredient(BaseModel):
@@ -52,9 +63,9 @@ class Recipe(BaseModel):
     prep_time: int | None = None  # minutes
     cook_time: int | None = None  # minutes
     servings: int | None = None
-    ingredients: list[RecipeIngredient]
-    instructions: list[Instruction]
-    tags: list[Tag]
+    ingredients: list[RecipeIngredient | None]
+    instructions: list[Instruction | None]
+    tags: list[Tag | None]
 
 
 # ------------------------------
@@ -80,7 +91,8 @@ def create_tables(conn: sqlite3.Connection):
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ingredients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL
+                name TEXT NOT NULL,
+                category TEXT
             );
         """)
         conn.execute("""
@@ -124,25 +136,27 @@ def create_tables(conn: sqlite3.Connection):
 # Helper Insertion Functions
 # ------------------------------
 
-def get_or_create_ingredient(conn: sqlite3.Connection, name: str) -> int:
-    cur = conn.execute("SELECT id FROM ingredients WHERE name = ?", (name,))
+def get_or_create_ingredient(conn: sqlite3.Connection, ingredient: Ingredient) -> int:
+    cur = conn.execute("SELECT id FROM ingredients WHERE name = ?", (ingredient.name,))
     row = cur.fetchone()
     if row:
-        logger.info(f"Ingredient {name} already exists")
+        logger.info(f"Ingredient {ingredient.name} already exists")
         return row[0]
-    cur = conn.execute("INSERT INTO ingredients (name) VALUES (?)", (name,))
-    logger.info(f"Inserted ingredient {name} with ID {cur.lastrowid}")
+    cur = conn.execute("INSERT INTO ingredients (name, category) VALUES (?, ?)", (ingredient.name, ingredient.category))
+    logger.info(f"Inserted ingredient {ingredient.name} with ID {cur.lastrowid}")
     return cur.lastrowid
 
-def get_or_create_tag(conn: sqlite3.Connection, name: str) -> int:
-    cur = conn.execute("SELECT id FROM tags WHERE name = ?", (name,))
+
+def get_or_create_tag(conn: sqlite3.Connection, tag: Tag) -> int:
+    cur = conn.execute("SELECT id FROM tags WHERE name = ?", (tag.name,))
     row = cur.fetchone()
     if row:
-        logger.info(f"Tag {name} already exists")
+        logger.info(f"Tag {tag.name} already exists")
         return row[0]
-    cur = conn.execute("INSERT INTO tags (name) VALUES (?)", (name,))
-    logger.info(f"Inserted Tag {name} with ID {cur.lastrowid}")
+    cur = conn.execute("INSERT INTO tags (name) VALUES (?)", (tag.name,))
+    logger.info(f"Inserted Tag {tag.name} with ID {cur.lastrowid}")
     return cur.lastrowid
+
 
 def insert_recipe(conn: sqlite3.Connection, recipe: Recipe, group_id: int | None = None) -> int:
 
@@ -181,7 +195,7 @@ def insert_recipe(conn: sqlite3.Connection, recipe: Recipe, group_id: int | None
     # Insert ingredients and the join table rows
     if recipe.ingredients:
         for ri in recipe.ingredients:
-            ingredient_id = get_or_create_ingredient(conn, ri.ingredient.name)
+            ingredient_id = get_or_create_ingredient(conn, ri.ingredient)
             conn.execute(
                 "INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?)",
                 (recipe_id, ingredient_id, ri.quantity, ri.unit)
@@ -190,7 +204,7 @@ def insert_recipe(conn: sqlite3.Connection, recipe: Recipe, group_id: int | None
     # Insert tags and recipe_tags join table rows
     if recipe.tags:
         for tag in recipe.tags:
-            tag_id = get_or_create_tag(conn, tag.name)
+            tag_id = get_or_create_tag(conn, tag)
             conn.execute(
                 "INSERT INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)",
                 (recipe_id, tag_id)
